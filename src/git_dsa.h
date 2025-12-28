@@ -9,6 +9,7 @@
 #define MAX_FILENAME 256
 #define MAX_MESSAGE 512
 #define HASH_SIZE 100 // Simple hash table size
+#define MAX_BRANCH_NAME 50
 
 // DSA Concept: Linked List Node for Commits
 // Each commit points to the previous commit (parent)
@@ -27,11 +28,35 @@ typedef struct FileEntry {
     struct FileEntry* next; // Chaining for collision resolution
 } FileEntry;
 
+// DSA Concept: Stack for Stash
+// Each stash entry contains a snapshot of the staging area
+typedef struct StashEntry {
+    FileEntry* files[HASH_SIZE]; // Snapshot of staging area
+    char message[MAX_MESSAGE];
+    char timestamp[50];
+    struct StashEntry* next; // Points to the next stash (deeper in stack)
+} StashEntry;
+
+// DSA Concept: Tree Node for Branches
+// Each branch is a node in a tree structure
+typedef struct BranchNode {
+    char name[MAX_BRANCH_NAME];
+    CommitNode* commit_head; // Head commit of this branch
+    int commit_count;
+    struct BranchNode* children[10]; // Child branches (max 10 for simplicity)
+    int child_count;
+    struct BranchNode* parent; // Parent branch
+} BranchNode;
+
 // The Repository structure
 typedef struct Repository {
     CommitNode* head; // Head of the linked list (latest commit)
     FileEntry* staging_area[HASH_SIZE]; // Hash table for staging files
     int commit_count;
+    StashEntry* stash_top; // Top of the stash stack
+    int stash_count;
+    BranchNode* branch_tree; // Root of the branch tree (master branch)
+    BranchNode* current_branch; // Currently checked out branch
 } Repository;
 
 // Global repository instance (simulating a singleton for simplicity)
@@ -44,8 +69,22 @@ void commit_changes(const char* message);
 void show_log();
 void show_status();
 
+// Stash operations (Stack)
+void stash_save(const char* message);
+void stash_pop();
+void stash_list();
+
+// Branch operations (Tree)
+void branch_create(const char* branch_name);
+void branch_list();
+void branch_checkout(const char* branch_name);
+void branch_delete(const char* branch_name);
+
 // Helper functions
 unsigned int hash_function(const char* str);
 void get_current_time(char* buffer);
+FileEntry** copy_staging_area();
+void clear_staging_area();
+void restore_staging_area(FileEntry** snapshot);
 
 #endif
