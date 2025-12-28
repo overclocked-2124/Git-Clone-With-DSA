@@ -9,11 +9,11 @@ void print_help() {
     printf("  log                   Show commit logs\n");
     printf("  status                Show the working tree status\n");
     printf("  graph                 Show visual commit graph with hashes\n");
-    printf("\nStash Commands (Stack DSA):\n");
+    printf("\nStash Commands (Stack):\n");
     printf("  stash save <msg>      Save changes to stash stack\n");
     printf("  stash pop             Restore most recent stash\n");
     printf("  stash list            List all stashes\n");
-    printf("\nBranch Commands (Tree DSA):\n");
+    printf("\nBranch Commands (Tree):\n");
     printf("  branch create <name>  Create a new branch\n");
     printf("  branch list           List all branches (tree view)\n");
     printf("  branch checkout <name> Switch to a branch\n");
@@ -42,11 +42,9 @@ int main() {
             scanf("%s", arg);
             add_file(arg);
         } else if (strcmp(command, "commit") == 0) {
-            // Read the rest of the line for the message
             char temp;
-            scanf("%c", &temp); // consume space
+            scanf("%c", &temp);
             fgets(arg, MAX_MESSAGE, stdin);
-            // Remove newline at the end
             arg[strcspn(arg, "\n")] = 0;
             commit_changes(arg);
         } else if (strcmp(command, "log") == 0) {
@@ -59,7 +57,7 @@ int main() {
             scanf("%s", subcommand);
             if (strcmp(subcommand, "save") == 0) {
                 char temp;
-                scanf("%c", &temp); // consume space
+                scanf("%c", &temp);
                 fgets(arg, MAX_MESSAGE, stdin);
                 arg[strcspn(arg, "\n")] = 0;
                 stash_save(arg);
