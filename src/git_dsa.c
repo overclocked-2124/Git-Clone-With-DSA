@@ -19,6 +19,40 @@ unsigned int hash_function(const char* str) {
     return hash % HASH_SIZE;
 }
 
+// Generate a SHA-1 like commit hash
+// Uses a simple hash combining commit id, message, and timestamp
+void generate_commit_hash(char* hash, int id, const char* message, const char* timestamp) {
+    unsigned long h1 = 5381;
+    unsigned long h2 = 0;
+    
+    // Hash the id
+    h1 = ((h1 << 5) + h1) + id;
+    
+    // Hash the message
+    const char* p = message;
+    while (*p) {
+        h1 = ((h1 << 5) + h1) + *p;
+        h2 = ((h2 << 3) + h2) ^ *p;
+        p++;
+    }
+    
+    // Hash the timestamp
+    p = timestamp;
+    while (*p) {
+        h1 = ((h1 << 5) + h1) + *p;
+        h2 = ((h2 << 3) + h2) ^ *p;
+        p++;
+    }
+    
+    // Generate 40-character hex string (like SHA-1)
+    snprintf(hash, 41, "%08lx%08lx%08lx%08lx%08lx", 
+             h1 % 0xFFFFFFFF, 
+             h2 % 0xFFFFFFFF,
+             (h1 ^ h2) % 0xFFFFFFFF,
+             (h1 + h2) % 0xFFFFFFFF,
+             (h1 * 31 + h2) % 0xFFFFFFFF);
+}
+
 // Command 1: Init
 // Initializes the repository structure
 void init_repo() {
@@ -122,6 +156,10 @@ void commit_changes(const char* message) {
     new_commit->id = ++repo->commit_count;
     strncpy(new_commit->message, message, MAX_MESSAGE);
     get_current_time(new_commit->timestamp);
+    strcpy(new_commit->branch_name, repo->current_branch->name);
+    
+    // Generate commit hash
+    generate_commit_hash(new_commit->hash, new_commit->id, message, new_commit->timestamp);
     
     // Point to the previous head (Parent commit)
     new_commit->next = repo->head;
@@ -133,7 +171,7 @@ void commit_changes(const char* message) {
     repo->current_branch->commit_head = new_commit;
     repo->current_branch->commit_count++;
     
-    printf("[%s %d] %s\n", repo->current_branch->name, new_commit->id, message);
+    printf("[%s %.7s] %s\n", repo->current_branch->name, new_commit->hash, message);
     
     // Clear the staging area to show we "moved" them to the commit history.
     clear_staging_area();
@@ -482,10 +520,10 @@ void branch_checkout(const char* branch_name) {
         return;
     }
     
-    // Switch branch
+    // Switch branch - DON'T change commit_count as it's a global counter
     repo->current_branch = target_branch;
     repo->head = target_branch->commit_head;
-    repo->commit_count = target_branch->commit_count;
+    // Don't reset repo->commit_count - it should be global!
     
     printf("Switched to branch '%s'\n", branch_name);
 }
@@ -535,4 +573,236 @@ void branch_delete(const char* branch_name) {
             return;
         }
     }
+}
+
+// ============================================
+// GIT GRAPH VISUALIZATION
+// ============================================
+// Command 13: Show Graph
+// Displays a visual representation of the commit history with branches
+// Similar to 'git log --graph --oneline --all'
+
+// ANSI color codes for terminal
+#define COLOR_RESET   "\033[0m"
+#define COLOR_RED     "\033[31m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_MAGENTA "\033[35m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_WHITE   "\033[37m"
+#define COLOR_BOLD    "\033[1m"
+
+// Array of colors for different branches
+const char* branch_colors[] = {
+    COLOR_RED, COLOR_GREEN, COLOR_YELLOW, 
+    COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN
+};
+#define NUM_COLORS 6
+
+// Helper: Get color for a branch
+const char* get_branch_color(const char* branch_name) {
+    unsigned int hash = 0;
+    const char* p = branch_name;
+    while (*p) {
+        hash = ((hash << 5) + hash) + *p;
+        p++;
+    }
+    return branch_colors[hash % NUM_COLORS];
+}
+
+// Helper: Count total commits across all branches
+int count_all_commits(BranchNode* node) {
+    if (node == NULL) return 0;
+    
+    int count = node->commit_count;
+    for (int i = 0; i < node->child_count; i++) {
+        count += count_all_commits(node->children[i]);
+    }
+    return count;
+}
+
+// Helper: Collect all commits into an array sorted by id (descending)
+typedef struct {
+    CommitNode* commit;
+    BranchNode* branch;
+} CommitInfo;
+
+void collect_commits_from_branch(BranchNode* branch, CommitInfo* commits, int* index, int max_size) {
+    if (branch == NULL) return;
+    
+    CommitNode* current = branch->commit_head;
+    while (current != NULL && *index < max_size) {
+        // Check if commit already added (from another branch)
+        int found = 0;
+        for (int i = 0; i < *index; i++) {
+            if (commits[i].commit->id == current->id) {
+                found = 1;
+                // Update branch if this commit belongs to this branch
+                if (strcmp(current->branch_name, branch->name) == 0) {
+                    commits[i].branch = branch;
+                }
+                break;
+            }
+        }
+        if (!found) {
+            commits[*index].commit = current;
+            // Use the branch where commit was actually made
+            if (strcmp(current->branch_name, branch->name) == 0) {
+                commits[*index].branch = branch;
+            } else {
+                // Find the original branch
+                BranchNode* orig = find_branch(repo->branch_tree, current->branch_name);
+                commits[*index].branch = orig ? orig : branch;
+            }
+            (*index)++;
+        }
+        current = current->next;
+    }
+    
+    // Recurse into children - this is key for branch tree traversal
+    for (int i = 0; i < branch->child_count; i++) {
+        if (branch->children[i] != NULL) {
+            collect_commits_from_branch(branch->children[i], commits, index, max_size);
+        }
+    }
+}
+
+// Compare function for sorting commits by id (descending)
+int compare_commits(const void* a, const void* b) {
+    CommitInfo* ca = (CommitInfo*)a;
+    CommitInfo* cb = (CommitInfo*)b;
+    return cb->commit->id - ca->commit->id;
+}
+
+void show_graph() {
+    if (repo == NULL) {
+        printf("Error: Repository not initialized.\n");
+        return;
+    }
+    
+    if (repo->head == NULL && repo->branch_tree->commit_head == NULL) {
+        printf("No commits yet.\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("%s╔══════════════════════════════════════════════════════════════════╗%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("%s║                      GIT COMMIT GRAPH                            ║%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("%s╚══════════════════════════════════════════════════════════════════╝%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("\n");
+    
+    // Collect all commits from all branches
+    int max_commits = 100;
+    CommitInfo* commits = (CommitInfo*)malloc(max_commits * sizeof(CommitInfo));
+    int commit_count = 0;
+    
+    collect_commits_from_branch(repo->branch_tree, commits, &commit_count, max_commits);
+    
+    if (commit_count == 0) {
+        printf("No commits to display.\n");
+        free(commits);
+        return;
+    }
+    
+    // Sort by commit id (newest first)
+    qsort(commits, commit_count, sizeof(CommitInfo), compare_commits);
+    
+    // Get list of active branches for column tracking
+    char active_branches[10][MAX_BRANCH_NAME];
+    int active_count = 0;
+    
+    // Display graph
+    for (int i = 0; i < commit_count; i++) {
+        CommitNode* commit = commits[i].commit;
+        BranchNode* branch = commits[i].branch;
+        const char* color = get_branch_color(branch->name);
+        
+        // Find or add branch to active list
+        int branch_col = -1;
+        for (int j = 0; j < active_count; j++) {
+            if (strcmp(active_branches[j], branch->name) == 0) {
+                branch_col = j;
+                break;
+            }
+        }
+        if (branch_col == -1 && active_count < 10) {
+            strcpy(active_branches[active_count], branch->name);
+            branch_col = active_count;
+            active_count++;
+        }
+        
+        // Print graph line
+        // Draw vertical lines for other branches
+        for (int j = 0; j < active_count; j++) {
+            if (j == branch_col) {
+                printf("%s● %s", color, COLOR_RESET);
+            } else {
+                const char* other_color = get_branch_color(active_branches[j]);
+                printf("%s│ %s", other_color, COLOR_RESET);
+            }
+        }
+        
+        // Print commit info
+        printf("%s%.7s%s ", COLOR_YELLOW, commit->hash, COLOR_RESET);
+        
+        // Check if this is HEAD of current branch
+        if (repo->current_branch->commit_head == commit) {
+            printf("%s(%sHEAD -> %s%s%s)%s ", 
+                   COLOR_BOLD, COLOR_CYAN, color, branch->name, COLOR_CYAN, COLOR_RESET);
+        } else if (branch->commit_head == commit) {
+            printf("%s(%s%s%s)%s ", COLOR_BOLD, color, branch->name, COLOR_BOLD, COLOR_RESET);
+        }
+        
+        printf("%s\n", commit->message);
+        
+        // Draw connecting lines
+        if (i < commit_count - 1) {
+            for (int j = 0; j < active_count; j++) {
+                const char* line_color = get_branch_color(active_branches[j]);
+                printf("%s│ %s", line_color, COLOR_RESET);
+            }
+            printf("\n");
+        }
+    }
+    
+    // Draw initial state
+    for (int j = 0; j < active_count; j++) {
+        const char* line_color = get_branch_color(active_branches[j]);
+        printf("%s│ %s", line_color, COLOR_RESET);
+    }
+    printf("\n");
+    
+    for (int j = 0; j < active_count; j++) {
+        if (j == 0) {
+            const char* line_color = get_branch_color(active_branches[j]);
+            printf("%s◯ %s", line_color, COLOR_RESET);
+        } else {
+            printf("  ");
+        }
+    }
+    printf("%s(Initial State)%s\n\n", COLOR_WHITE, COLOR_RESET);
+    
+    // Print legend
+    printf("%s─────────────────────────────────────────────────────────────────────%s\n", COLOR_WHITE, COLOR_RESET);
+    printf("%sLegend:%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("  %s●%s  Commit node\n", COLOR_GREEN, COLOR_RESET);
+    printf("  %s│%s  Branch line\n", COLOR_GREEN, COLOR_RESET);
+    printf("  %s◯%s  Initial state\n", COLOR_WHITE, COLOR_RESET);
+    printf("  %sxxxxxxx%s  Commit hash (first 7 chars)\n", COLOR_YELLOW, COLOR_RESET);
+    printf("\n");
+    
+    // Print branch summary
+    printf("%sBranches:%s\n", COLOR_BOLD, COLOR_RESET);
+    for (int j = 0; j < active_count; j++) {
+        const char* bcolor = get_branch_color(active_branches[j]);
+        if (strcmp(active_branches[j], repo->current_branch->name) == 0) {
+            printf("  %s* %s%s (current)\n", bcolor, active_branches[j], COLOR_RESET);
+        } else {
+            printf("  %s  %s%s\n", bcolor, active_branches[j], COLOR_RESET);
+        }
+    }
+    printf("\n");
+    
+    free(commits);
 }

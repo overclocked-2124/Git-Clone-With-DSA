@@ -8,6 +8,7 @@ void print_help() {
     printf("  commit <msg>          Record changes to the repository\n");
     printf("  log                   Show commit logs\n");
     printf("  status                Show the working tree status\n");
+    printf("  graph                 Show visual commit graph with hashes\n");
     printf("\nStash Commands (Stack DSA):\n");
     printf("  stash save <msg>      Save changes to stash stack\n");
     printf("  stash pop             Restore most recent stash\n");
@@ -52,6 +53,8 @@ int main() {
             show_log();
         } else if (strcmp(command, "status") == 0) {
             show_status();
+        } else if (strcmp(command, "graph") == 0) {
+            show_graph();
         } else if (strcmp(command, "stash") == 0) {
             scanf("%s", subcommand);
             if (strcmp(subcommand, "save") == 0) {

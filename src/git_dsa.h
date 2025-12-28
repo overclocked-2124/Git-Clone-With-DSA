@@ -15,8 +15,10 @@
 // Each commit points to the previous commit (parent)
 typedef struct CommitNode {
     int id;
+    char hash[41];  // SHA-1 like hash (40 chars + null terminator)
     char message[MAX_MESSAGE];
     char timestamp[50];
+    char branch_name[MAX_BRANCH_NAME]; // Branch where commit was made
     struct CommitNode* next; // Pointer to the parent commit
 } CommitNode;
 
@@ -80,9 +82,13 @@ void branch_list();
 void branch_checkout(const char* branch_name);
 void branch_delete(const char* branch_name);
 
+// Graph visualization
+void show_graph();
+
 // Helper functions
 unsigned int hash_function(const char* str);
 void get_current_time(char* buffer);
+void generate_commit_hash(char* hash, int id, const char* message, const char* timestamp);
 FileEntry** copy_staging_area();
 void clear_staging_area();
 void restore_staging_area(FileEntry** snapshot);
