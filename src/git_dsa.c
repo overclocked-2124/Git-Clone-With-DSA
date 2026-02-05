@@ -490,6 +490,75 @@ void branch_delete(const char* branch_name) {
     }
 }
 
+void branch_merge(const char* branch_name) {
+    if (repo == NULL) {
+        printf("Error: Repository not initialized.\n");
+        return;
+    }
+
+    if (strcmp(repo->current_branch->name, branch_name) == 0) {
+        printf("Cannot merge branch '%s' into itself.\n", branch_name);
+        return;
+    }
+
+    BranchNode* source = find_branch(repo->branch_tree, branch_name);
+    if (source == NULL) {
+        printf("Branch '%s' not found.\n", branch_name);
+        return;
+    }
+
+    if (source->commit_head == NULL) {
+        printf("Branch '%s' has no commits to merge.\n", branch_name);
+        return;
+    }
+
+    /* Count commits unique to the source branch */
+    int unique_count = 0;
+
+    CommitNode* src = source->commit_head;
+    while (src != NULL) {
+        /* Check if this commit already exists in current branch */
+        int exists = 0;
+        CommitNode* cur = repo->current_branch->commit_head;
+        while (cur != NULL) {
+            if (cur->id == src->id) {
+                exists = 1;
+                break;
+            }
+            cur = cur->next;
+        }
+        if (!exists) {
+            unique_count++;
+        }
+        src = src->next;
+    }
+
+    if (unique_count == 0) {
+        printf("Already up to date.\n");
+        return;
+    }
+
+    /* Create a merge commit that combines changes */
+    char merge_msg[MAX_MESSAGE];
+    snprintf(merge_msg, MAX_MESSAGE, "Merge branch '%s' into %s", branch_name, repo->current_branch->name);
+
+    CommitNode* merge_commit = (CommitNode*)malloc(sizeof(CommitNode));
+    merge_commit->id = ++repo->commit_count;
+    strncpy(merge_commit->message, merge_msg, MAX_MESSAGE);
+    get_current_time(merge_commit->timestamp);
+    strcpy(merge_commit->branch_name, repo->current_branch->name);
+    generate_commit_hash(merge_commit->hash, merge_commit->id, merge_msg, merge_commit->timestamp);
+
+    merge_commit->next = repo->current_branch->commit_head;
+    repo->current_branch->commit_head = merge_commit;
+    repo->current_branch->commit_count++;
+    repo->head = merge_commit;
+
+    printf("Merge made by the 'recursive' strategy.\n");
+    printf("[%s %.7s] %s\n", repo->current_branch->name, merge_commit->hash, merge_msg);
+    printf(" %d commit(s) merged from '%s'\n", unique_count, branch_name);
+}
+
 const char* get_branch_color(const char* branch_name) {
     unsigned int hash = 0;
     const char* p = branch_name;

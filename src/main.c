@@ -18,6 +18,7 @@ void print_help() {
     printf("  branch list           List all branches (tree view)\n");
     printf("  branch checkout <name> Switch to a branch\n");
     printf("  branch delete <name>  Delete a branch\n");
+    printf("  branch merge <name>   Merge a branch into current branch\n");
     printf("\n  exit                  Exit the program\n");
 }
 
@@ -81,6 +82,9 @@ int main() {
             } else if (strcmp(subcommand, "delete") == 0) {
                 scanf("%s", arg);
                 branch_delete(arg);
+            } else if (strcmp(subcommand, "merge") == 0) {
+                scanf("%s", arg);
+                branch_merge(arg);
             } else {
                 printf("Unknown branch command: %s\n", subcommand);
             }

@@ -68,6 +68,7 @@ void branch_create(const char* branch_name);
 void branch_list();
 void branch_checkout(const char* branch_name);
 void branch_delete(const char* branch_name);
+void branch_merge(const char* branch_name);
 
 void show_graph();
 
